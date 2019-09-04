@@ -4,6 +4,7 @@
 
 
 #include <Python.h>
+#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
 #include "numpy/arrayobject.h"
 
 #include <stdio.h>
@@ -58,7 +59,7 @@ int parse_image(PyArrayObject ** arr)
         for (JDIMENSION h=0; h < height; h++) {
             JBLOCKARRAY ptr = ((&cinfo)->mem->access_virt_barray)((j_common_ptr) &cinfo, src_coeff_arrays[d], h, (JDIMENSION) 1, FALSE);
             for (JDIMENSION w=0; w < width; w++)
-                memcpy((*arr)->data + d * stride_0 + h * stride_1 + w * stride_2, ptr[0][w], blocksize);
+                memcpy(PyArray_DATA(*arr) + d * stride_0 + h * stride_1 + w * stride_2, ptr[0][w], blocksize);
         }
 
     jpeg_destroy_decompress(&cinfo);
@@ -106,7 +107,7 @@ int decode_image(PyArrayObject ** arr)
     JSAMPARRAY ptr = (*cinfo.mem->alloc_sarray)((j_common_ptr) &cinfo, JPOOL_IMAGE, linesize, 1);
     for (int h=0; h < height; h++) {
         (void) jpeg_read_scanlines(&cinfo, ptr, 1);
-        memcpy((*arr)->data + h * linesize, ptr[0], linesize);
+        memcpy(PyArray_DATA(*arr) + h * linesize, ptr[0], linesize);
     }
 
     (void) jpeg_finish_decompress(&cinfo);
@@ -155,7 +156,7 @@ int encode_image(PyArrayObject * arr)
 
     JSAMPARRAY ptr = (*cinfo.mem->alloc_sarray)((j_common_ptr) &cinfo, JPOOL_IMAGE, linesize, 1);
     for (int h=0; cinfo.next_scanline < cinfo.image_height; h++) {
-        memcpy(ptr[0], arr->data + h * linesize, linesize);
+        memcpy(ptr[0], PyArray_DATA(arr) + h * linesize, linesize);
         (void) jpeg_write_scanlines(&cinfo, ptr, 1);
     }
 
