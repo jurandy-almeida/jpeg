@@ -38,9 +38,9 @@ The python wrapper has three functions: `parse`, `load` and `save`.
 The following call parses the JPEG raw data and returns the DCT coefficients in a numpy array.
 ```python
 from jpeg import parse
-parse([fname], normalize=True, quality=100, subsampling='keep', upsample=True, stack=True)
+parse([input], normalize=True, quality=100, subsampling='keep', upsample=True, stack=True, memory=False)
 ```
- - __fname__: path to a file from which the JPEG image is loaded.
+ - __input__: path to a file or memory buffer from which the JPEG image is loaded.
  - __normalize__: if present and `True`, the DCT coefficients are normalized with quantification tables. If `False`, no normalization is performed. The default is `True`.
  - __quality__: if present and less than 100, transcodes the image to a different quality, on a scale from 1 (degraded image) to 100 (original image). The default is 100.
  - __subsampling__: if present, transcodes the image to a different subsampling. The options are:
@@ -48,6 +48,7 @@ parse([fname], normalize=True, quality=100, subsampling='keep', upsample=True, s
    - `4:4:4`, `4:2:2`, `4:2:0`, `4:4:0`, `4:1:1`: specific sampling values.
  - __upsample__: if present and `True`, the DCT coefficients for the chroma channels (Cb and Cr) are upsampled to have the dimensions of the luminance channel (Y). If `False`, no upsampling is performed. The default is `True`.
  - __stack__: if present and `True`, the numpy arrays for the luminance (Y) and chroma channels (Cb and Cr) are stacked along a new axis, returning a single numpy array. If `False`, a tuple with one numpy array for each channel is returned. The default is `True`.
+ - __memory__: if present and `True`, input is a memory buffer. If `False`, input is a path to a file. The default is `False`.
 
 For example,
 ```
@@ -57,9 +58,9 @@ parse('image.jpg')
 The following call loads a JPEG image into a numpy array.
 ```python
 from jpeg import load
-load([fname], color_space='keep', scale=1.0, dct_method='islow')
+load([input], color_space='keep', scale=1.0, dct_method='islow', memory=False)
 ```
- - __fname__: path to a file from which the JPEG image is loaded.
+ - __input__: path to a file or memory buffer from which the JPEG image is loaded.
  - __color\_space__: if present, sets the output color space. This feature depends on the input color space, since not all possible color space transforms are currently implemented. The options are:
    - `keep`: retain the original image setting. (_default_)
    - `grayscale`: transform to a grayscale image.
@@ -73,6 +74,7 @@ load([fname], color_space='keep', scale=1.0, dct_method='islow')
    - `islow`: slow but accurate integer algorithm. (_default_)
    - `ifast`: faster, less accurate integer method.
    - `float`: floating-point method.
+ - __memory__: if present and `True`, input is a memory buffer. If `False`, input is a path to a file. The default is `False`.
 
 For example, 
 ```
