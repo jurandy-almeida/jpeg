@@ -15,8 +15,8 @@
 
 /* ------------------------ Global variables ----------------------------- */
 
-static const char *inbuffer = NULL;
-static size_t inlen = 0;
+static const char *membuffer = NULL;
+static size_t memlen = 0;
 
 static PyObject *JPEGError;
 
@@ -113,6 +113,28 @@ static void set_compress_dct_method(j_compress_ptr cinfo,
                                     char *dct_method);
 static void set_in_color_space(j_compress_ptr cinfo,
                                char *color_space);
+static void encode_image_to_cinfo(j_compress_ptr cinfo,
+                                  PyArrayObject * arr,
+                                  char *color_space,
+                                  int quality,
+                                  char *dct_method,
+                                  char *subsampling,
+                                  int optimize,
+                                  int progressive);
+static int encode_image_to_mem(PyArrayObject * arr,
+                               char *color_space,
+                               int quality,
+                               char *dct_method,
+                               char *subsampling,
+                               int optimize,
+                               int progressive);
+static int encode_image_to_stdio(PyArrayObject * arr,
+                                 char *color_space,
+                                 int quality,
+                                 char *dct_method,
+                                 char *subsampling,
+                                 int optimize,
+                                 int progressive);
 static int encode_image(PyArrayObject * arr,
                         char *color_space,
                         int quality,
@@ -466,7 +488,7 @@ static int parse_image_from_mem(PyArrayObject * arr[],
     cinfo.err = jpeg_std_error(&jerr);
     jpeg_create_decompress(&cinfo);
 
-    jpeg_mem_src(&cinfo, (uint8_t*) inbuffer, inlen);
+    jpeg_mem_src(&cinfo, (uint8_t*) membuffer, memlen);
 
     int ret = parse_image_from_cinfo(&cinfo,
                                      arr,
@@ -493,9 +515,9 @@ static int parse_image_from_stdio(PyArrayObject * arr[],
     struct jpeg_decompress_struct cinfo;
     struct jpeg_error_mgr jerr;
 
-    fp = fopen(inbuffer, "rb");
+    fp = fopen(membuffer, "rb");
     if (! fp)
-        return fatal_error("Could not open file %s.", inbuffer);
+        return fatal_error("Could not open file %s.", membuffer);
 
     cinfo.err = jpeg_std_error(&jerr);
     jpeg_create_decompress(&cinfo);
@@ -635,7 +657,7 @@ static int decode_image_from_mem(PyArrayObject ** arr,
     cinfo.err = jpeg_std_error(&jerr);
     jpeg_create_decompress(&cinfo);
 
-    jpeg_mem_src(&cinfo, (uint8_t*) inbuffer, inlen);
+    jpeg_mem_src(&cinfo, (uint8_t*) membuffer, memlen);
 
     decode_image_from_cinfo(&cinfo,
                             arr,
@@ -658,9 +680,9 @@ static int decode_image_from_stdio(PyArrayObject ** arr,
     struct jpeg_decompress_struct cinfo;
     struct jpeg_error_mgr jerr;
 
-    fp = fopen(inbuffer, "rb");
+    fp = fopen(membuffer, "rb");
     if (! fp)
-        return fatal_error("Could not open file %s.", inbuffer);
+        return fatal_error("Could not open file %s.", membuffer);
 
     cinfo.err = jpeg_std_error(&jerr);
     jpeg_create_decompress(&cinfo);
@@ -732,6 +754,112 @@ static void set_in_color_space(j_compress_ptr cinfo,
 }
 
 
+static void encode_image_to_cinfo(j_compress_ptr cinfo,
+                                  PyArrayObject * arr,
+                                  char *color_space,
+                                  int quality,
+                                  char *dct_method,
+                                  char *subsampling,
+                                  int optimize,
+                                  int progressive)
+{
+    int ndim = PyArray_NDIM(arr);
+    npy_intp * dims = PyArray_DIMS(arr);
+    cinfo->image_height = dims[0];
+    cinfo->image_width  = dims[1];
+    cinfo->input_components = (ndim > 2) ? dims[2] : 1;
+    set_in_color_space(cinfo, (ndim > 2) ? color_space : "grayscale");
+
+    int linesize = cinfo->image_width * cinfo->input_components;
+
+    jpeg_set_defaults(cinfo);
+
+    set_compress_dct_method(cinfo, dct_method);
+    jpeg_set_quality(cinfo, quality, TRUE);
+    set_subsampling(cinfo, subsampling);
+    cinfo->optimize_coding = (optimize != 0);
+    if (progressive) jpeg_simple_progression(cinfo);
+
+    jpeg_start_compress(cinfo, TRUE);
+
+    JSAMPARRAY ptr = (*cinfo->mem->alloc_sarray)((j_common_ptr) cinfo, JPOOL_IMAGE, linesize, 1);
+    for (int h=0; cinfo->next_scanline < cinfo->image_height; h++) {
+        memcpy(ptr[0], PyArray_DATA(arr) + h * linesize, linesize);
+        (void) jpeg_write_scanlines(cinfo, ptr, 1);
+    }
+
+    (void) jpeg_finish_compress(cinfo);
+}
+
+
+static int encode_image_to_mem(PyArrayObject * arr,
+                               char *color_space,
+                               int quality,
+                               char *dct_method,
+                               char *subsampling,
+                               int optimize,
+                               int progressive)
+{
+    struct jpeg_compress_struct cinfo;
+    struct jpeg_error_mgr jerr;
+
+    cinfo.err = jpeg_std_error(&jerr);
+    jpeg_create_compress(&cinfo);
+
+    jpeg_mem_dest(&cinfo, (uint8_t**) &membuffer, &memlen);
+
+    encode_image_to_cinfo(&cinfo,
+                          arr,
+                          color_space,
+                          quality,
+                          dct_method,
+                          subsampling,
+                          optimize,
+                          progressive);
+
+    jpeg_destroy_compress(&cinfo);
+
+    return memlen;
+}
+
+
+static int encode_image_to_stdio(PyArrayObject * arr,
+                                 char *color_space,
+                                 int quality,
+                                 char *dct_method,
+                                 char *subsampling,
+                                 int optimize,
+                                 int progressive)
+{
+    FILE *fp;
+    struct jpeg_compress_struct cinfo;
+    struct jpeg_error_mgr jerr;
+
+    fp = fopen(membuffer, "wb");
+    if (! fp)
+        return fatal_error("Could not open file %s.", membuffer);
+
+    cinfo.err = jpeg_std_error(&jerr);
+    jpeg_create_compress(&cinfo);
+
+    jpeg_stdio_dest(&cinfo, fp);
+
+    encode_image_to_cinfo(&cinfo,
+                          arr,
+                          color_space,
+                          quality,
+                          dct_method,
+                          subsampling,
+                          optimize,
+                          progressive);
+
+    jpeg_destroy_compress(&cinfo);
+    fclose(fp);
+
+    return 0;
+}
+
+
 static int encode_image(PyArrayObject * arr,
                         char *color_space,
                         int quality,
@@ -740,49 +868,21 @@ static int encode_image(PyArrayObject * arr,
                         int optimize,
                         int progressive)
 {
-    FILE *fp;
-    struct jpeg_compress_struct cinfo;
-    struct jpeg_error_mgr jerr;
-
-    fp = fopen(inbuffer, "wb");
-    if (! fp)
-        return fatal_error("Could not open file %s.", inbuffer);
-
-    cinfo.err = jpeg_std_error(&jerr);
-    jpeg_create_compress(&cinfo);
-
-    jpeg_stdio_dest(&cinfo, fp);
-
-    int ndim = PyArray_NDIM(arr);
-    npy_intp * dims = PyArray_DIMS(arr);
-    cinfo.image_height = dims[0];
-    cinfo.image_width  = dims[1];
-    cinfo.input_components = (ndim > 2) ? dims[2] : 1;
-    set_in_color_space(&cinfo, (ndim > 2) ? color_space : "grayscale");
-
-    int linesize = cinfo.image_width * cinfo.input_components;
-
-    jpeg_set_defaults(&cinfo);
-
-    set_compress_dct_method(&cinfo, dct_method);
-    jpeg_set_quality(&cinfo, quality, TRUE);
-    set_subsampling(&cinfo, subsampling);
-    cinfo.optimize_coding = (optimize != 0);
-    if (progressive) jpeg_simple_progression(&cinfo);
-
-    jpeg_start_compress(&cinfo, TRUE);
-
-    JSAMPARRAY ptr = (*cinfo.mem->alloc_sarray)((j_common_ptr) &cinfo, JPOOL_IMAGE, linesize, 1);
-    for (int h=0; cinfo.next_scanline < cinfo.image_height; h++) {
-        memcpy(ptr[0], PyArray_DATA(arr) + h * linesize, linesize);
-        (void) jpeg_write_scanlines(&cinfo, ptr, 1);
-    }
-
-    (void) jpeg_finish_compress(&cinfo);
-    jpeg_destroy_compress(&cinfo);
-    fclose(fp);
-
-    return 0;
+    return membuffer == NULL ?
+           encode_image_to_mem(arr,
+                               color_space,
+                               quality,
+                               dct_method,
+                               subsampling,
+                               optimize,
+                               progressive) :
+           encode_image_to_stdio(arr,
+                                 color_space,
+                                 quality,
+                                 dct_method,
+                                 subsampling,
+                                 optimize,
+                                 progressive);
 }
 
 
@@ -806,7 +906,7 @@ static PyObject *parse(PyObject *self, PyObject *args, PyObject *kwargs)
                              "memory",
                              NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s#|pisppp", kwlist,
-                                     &inbuffer, &inlen,
+                                     &membuffer, &memlen,
                                      &normalize,
                                      &quality,
                                      &subsampling,
@@ -826,7 +926,7 @@ static PyObject *parse(PyObject *self, PyObject *args, PyObject *kwargs)
 
         for (int i=0; i < len; i++)
             Py_XDECREF(arr[i]);
-        return Py_None;
+        Py_RETURN_NONE;
     }
 
     if (len == 1)
@@ -854,7 +954,7 @@ static PyObject *load(PyObject *self, PyObject *args, PyObject *kwargs)
                              "memory",
                              NULL};
    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s#|sfsp", kwlist,
-                                    &inbuffer, &inlen,
+                                    &membuffer, &memlen,
                                     &color_space,
                                     &scale,
                                     &dct_method,
@@ -869,7 +969,7 @@ static PyObject *load(PyObject *self, PyObject *args, PyObject *kwargs)
         printf("Decoding image failed.\n");
 
         Py_XDECREF(arr);
-        return Py_None;
+        Py_RETURN_NONE;
     }
 
     return (PyObject*) arr;
@@ -886,9 +986,10 @@ static PyObject *save(PyObject *self, PyObject *args, PyObject *kwargs)
     char *subsampling = "4:2:0";
     int optimize = FALSE;
     int progressive = FALSE;
+    int len;
 
-    static char *kwlist[] = {"fname",
-                             "arr",
+    static char *kwlist[] = {"arr",
+                             "fname",
                              "color_space",
                              "quality",
                              "dct_method",
@@ -896,9 +997,9 @@ static PyObject *save(PyObject *self, PyObject *args, PyObject *kwargs)
                              "optimize",
                              "progressive",
                              NULL};
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "sO|sisspp", kwlist,
-                                     &inbuffer,
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|z#sisspp", kwlist,
                                      &arg1,
+                                     &membuffer, &memlen,
                                      &color_space,
                                      &quality,
                                      &dct_method,
@@ -912,17 +1013,20 @@ static PyObject *save(PyObject *self, PyObject *args, PyObject *kwargs)
                                             NPY_ARRAY_IN_ARRAY);
     if (!arr) return NULL;
 
-    if (encode_image(arr,
-                     stolower(color_space),
-                     quality,
-                     stolower(dct_method),
-                     stolower(subsampling),
-                     optimize,
-                     progressive) < 0)
+    if ((len = encode_image(arr,
+                            stolower(color_space),
+                            quality,
+                            stolower(dct_method),
+                            stolower(subsampling),
+                            optimize,
+                            progressive)) < 0)
         printf("Encoding image failed.\n");
 
+	PyObject *ret = len ? Py_BuildValue("y#", membuffer, memlen) : Py_None;
+	if (len) FREE(membuffer);
+
     Py_DECREF(arr);
-    Py_RETURN_NONE;
+    return ret;
 }
 
 

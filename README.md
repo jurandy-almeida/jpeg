@@ -48,7 +48,7 @@ parse([input], normalize=True, quality=100, subsampling='keep', upsample=True, s
    - `4:4:4`, `4:2:2`, `4:2:0`, `4:4:0`, `4:1:1`: specific sampling values.
  - __upsample__: if present and `True`, the DCT coefficients for the chroma channels (Cb and Cr) are upsampled to have the dimensions of the luminance channel (Y). If `False`, no upsampling is performed. The default is `True`.
  - __stack__: if present and `True`, the numpy arrays for the luminance (Y) and chroma channels (Cb and Cr) are stacked along a new axis, returning a single numpy array. If `False`, a tuple with one numpy array for each channel is returned. The default is `True`.
- - __memory__: if present and `True`, input is a memory buffer. If `False`, input is a path to a file. The default is `False`.
+ - __memory__: if present and `True`, indicates that the input is a memory buffer. The default is `False`.
 
 For example,
 ```
@@ -74,7 +74,7 @@ load([input], color_space='keep', scale=1.0, dct_method='islow', memory=False)
    - `islow`: slow but accurate integer algorithm. (_default_)
    - `ifast`: faster, less accurate integer method.
    - `float`: floating-point method.
- - __memory__: if present and `True`, input is a memory buffer. If `False`, input is a path to a file. The default is `False`.
+ - __memory__: if present and `True`, indicates that the input is a memory buffer. The default is `False`.
 
 For example, 
 ```
@@ -84,10 +84,10 @@ load('image.jpg')
 The following call saves a numpy array as a JPEG image.
 ```python
 from jpeg import save
-save([fname], [array], color_space='RGB', quality=75, dct_method='islow', subsampling='4:2:0', optimize=False, progressive=False)
+save([array], fname=None, color_space='RGB', quality=75, dct_method='islow', subsampling='4:2:0', optimize=False, progressive=False)
 ```
- - __fname__: path to a file to which the JPEG image is saved.
  - __array__: a numpy array with shape `height` x `width` x 3, in case colored images; or `height` x `width` for grayscale images.
+ - __fname__: if present, indicates the path to a file to which the JPEG image is saved. If `None`, the JPEG image is returned as a bytes object. The default is `None`.
  - __color\_space__: if present, selects the input color space. The options are:
    - `grayscale`: a grayscale image.
    - `RGB`: an image in the RGB color space. (_default_)
@@ -107,5 +107,5 @@ save([fname], [array], color_space='RGB', quality=75, dct_method='islow', subsam
 For example, 
 ```
 imarr = numpy.random.randint(255, size=(100,100,3), dtype='uint8')
-save('image.jpg', imarr)
+save(imarr, fname='image.jpg')
 ```
