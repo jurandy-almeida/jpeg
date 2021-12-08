@@ -105,7 +105,7 @@ save([array], fname=None, color_space='RGB', quality=75, dct_method='islow', sub
  - __progressive__: if present and `True`, indicates that this image should be stored as a progressive JPEG file. The default is `False`.
 
 For example, 
-```python
+```
 imarr = numpy.random.randint(255, size=(100,100,3), dtype='uint8')
 save(imarr, fname='image.jpg')
 ```
